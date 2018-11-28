@@ -447,10 +447,27 @@ void CImageProcessingDoc::OnProcessComposite()
 					firstBright = tempBlue + tempGreen + tempRed;
 					secondBright = secondColor.rgbBlue + secondColor.rgbGreen + secondColor.rgbRed;
 					
-					//if ((abs(secondColor.rgbBlue - secondColor.rgbGreen) + abs(secondColor.rgbGreen - secondColor.rgbRed) + abs(secondColor.rgbRed - secondColor.rgbBlue)) > 20) {
+					if ((abs(secondColor.rgbBlue - secondColor.rgbGreen) + abs(secondColor.rgbGreen - secondColor.rgbRed) + abs(secondColor.rgbRed - secondColor.rgbBlue)) > 20) {
 						brightScale = firstBright / secondBright;
-					//}
+					}
+					else {
+						for (bx = -5; bx <= 5; bx++) {
+							if (bx + x < 0 || bx + x >= width) {
+								continue;
+							}
+							firstColor = pSecondImage->GetPixelColor(x, y);
+							boundary[0] = abs(firstColor.rgbBlue - secondColor.rgbBlue);
+							boundary[1] = abs(firstColor.rgbGreen - secondColor.rgbGreen);
+							boundary[2] = abs(firstColor.rgbRed - secondColor.rgbRed);
+							if (boundary[0] + boundary[1] + boundary[2] > 20) {
+								diff = 1
+							}
+						}
+						for (by = -5; by <= 5; by++) {
 
+						}
+					}
+					
 					tempBlue = abs(secondColor.rgbBlue * brightScale - tempBlue);
 					tempGreen = abs(secondColor.rgbGreen * brightScale - tempGreen);
 					tempRed = abs(secondColor.rgbRed * brightScale - tempRed);
