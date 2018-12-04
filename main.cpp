@@ -3,7 +3,14 @@
 #include <memory.h>
 #include <iostream>
 #include <vector>
+#include <algorithm>
 #include <time.h>
+#include <string>
+#include <Windows.h>
+
+#define setting_num 10
+#define std_width 320
+#define std_height 240
 
 using namespace cv;
 using namespace std;
@@ -20,68 +27,144 @@ typedef struct pt {
 	int y;
 } location;
 
-PIXEL **Maps;
+typedef struct {
+	int group_num;
+	int size;
+	pt avg_location;
+	pt end_point[4]; // 0 상 1 우 2 하 3 좌
+} keypoint_group;
+
+// PIXEL **Maps;
 PIXEL **Bgs;
 PIXEL **NewImg;
 
 uint8_t **ptr;
-vector<location> corner;
 
-void IppHarrisCorner(int w, int h, double th);
-void mallocMaps(int width, int height);
+vector<location> corner;
+vector<int> group_index;
+// vector<keypoint_group> keypg;
+
+typedef struct {
+	Mat img;
+	IplImage *trans;
+	PIXEL **Maps;
+	vector<keypoint_group> keypg;
+} background_info ;
+
+vector<background_info> bgi;
+Mat rotate_pi(Mat img, int width, int height);
+void IppHarrisCorner(int w, int h, double th, int img_index);
+void mallocMaps(int width, int height, int img_index);
 void mallocByte(int width, int height);
-void mallocFloat(float **tmp, int width, int height);
-void assignPtr(int width, int height);
-void transImgToArray(IplImage* img);
-void grayscaling(int width, int height);
-void binarization(int width, int height);
+void assignPtr(int width, int height, int img_index);
+void transImgToArray(IplImage* img, int img_index);
+void grayscaling(int width, int height, int img_index);
+void binarization(int width, int height, int img_index);
 void setRedPoint(IplImage* img);
+int find(int a, vector<int> & v);
+void join(int a, int b, vector<int> & vt);
+void grouping();
+void decision(vector<int> & vt, int n1, int n2);
+int abs(int a);
+void alloc_keyPoint(int img_index);
+void push_keyPoint(int n, int img_index);
+void setRedBox(IplImage* img, int height, int width, int img_index);
+void findCigar(int width, int height, int img_index);
+void subBackground(int width, int height, int img_index);
+Mat check_nearby(int a, int b);
+Mat composite_by_point(int a, int b, int i, int j);
+
+bool compare(const keypoint_group &a, const keypoint_group &b) {
+	return a.avg_location.x < b.avg_location.x;
+}
 
 int main() {
 
-	Mat img[4];
-	img[0] = imread("C:\\5.jpg", IMREAD_COLOR);
-	img[1] = imread("C:\\2.jpg", IMREAD_COLOR);
-	img[2] = imread("C:\\3.jpg", IMREAD_COLOR);
-	img[3] = imread("C:\\4.jpg", IMREAD_COLOR);
+	Mat img[setting_num];
+	IplImage *trans[setting_num];
+	string inputString;
+	string outputString;
 
-	if (!img[0].data || !img[1].data || !img[2].data || !img[3].data) {
-		cout << "Image File Open Failed" << endl;
-		return -1;
+	for (int i = 0; i < setting_num; i++) {
+		inputString = "C:\\"; // ★★★★★★ image directory setting ★★★★★★
+		inputString.append(to_string(i));
+		inputString.append(".jpg");
+		img[i] = imread(inputString, IMREAD_COLOR);
+		if (!img[i].data) {
+			cout << "Waiting....." << i << endl;
+			i--;
+			Sleep(5000);
+			continue;
+		}
 	}
-	IplImage *trans[4];
-	trans[0] = &IplImage(img[0]);
-	trans[1] = &IplImage(img[1]);
-	trans[2] = &IplImage(img[2]);
-	trans[3] = &IplImage(img[3]);
-
-	char imgName[4] = { '1', '2', '3', '4' };
+	
+	for (int i = 0; i < setting_num; i++) {
+		trans[i] = &IplImage(img[i]);
+		outputString = "r_";
+		outputString.append(to_string(i));
+		outputString.append(".jpg");
+		img[i] = rotate_pi(img[i], trans[i]->width, trans[i]->height);
+		imwrite(outputString, img[i]);
+	}
+	
+	background_info tbg;
+	bgi.assign(setting_num, tbg);
+	for (int i = 0; i < setting_num; i++) {
+		bgi[i].img = img[i];
+	}
 	clock_t begin, end;
 	begin = clock();
-	for (int i = 0; i < 1; i++) {
-		int width = trans[i]->width;
-		int height = trans[i]->height;
+	for (int i = 0; i < setting_num; i++) {
+
+		bgi[i].trans = &IplImage(bgi[i].img);
+		int width = bgi[i].trans->width;
+		int height = bgi[i].trans->height;
 		int threshold = 100;
 
-		mallocMaps(width, height);
-		transImgToArray(trans[i]);
-		grayscaling(width, height);
+		mallocMaps(width, height, i);
+		transImgToArray(bgi[i].trans, i);
+		
+		grayscaling(width, height, i);
 		//binarization(width, height);
 
-		IppHarrisCorner(width, height, threshold);
-		setRedPoint(trans[i]);
+		IppHarrisCorner(width, height, threshold, i);
+		setRedPoint(bgi[i].trans);
 		//cvResizeWindow("test.jpg", 320, 240);
+		grouping();
+		alloc_keyPoint(i);
 
-		cvShowImage("test.jpg", trans[i]);
-
-		waitKey(0);
-
+		setRedBox(bgi[i].trans, height, width, i);
+		group_index.clear();
+		// keypg.clear();
+		outputString = to_string(i);
+		outputString.append(".jpg");
+		cvShowImage(outputString.c_str(), bgi[i].trans);
+		
 	}
+
+	Mat temp;
+	temp = check_nearby(0, 1);
+	imshow("test_comp", temp);
+	waitKey(0);
 	end = clock();
 	cout << ((end - begin)) << "ms" << endl;
+	
 	return 0;
 }
-void IppHarrisCorner(int width, int height, double th)
+
+Mat rotate_pi(Mat img, int width, int height) { // rotate 180 degree
+	Mat ret = Mat(height, width, CV_8UC3, Scalar(0, 0, 0));
+	for (int i = 0; i < height; i++) {
+		for (int j = 0; j < width; j++) {
+			for (int k = 0; k < 3; k++) {
+				ret.at<Vec3b>(i, j)[k] = img.at<Vec3b>(height - i - 1, width - j - 1)[k];
+			}			
+		}
+	}
+	return ret;
+}
+
+void IppHarrisCorner(int width, int height, double th, int img_index)
 {
 	register int i, j, x, y;
 
@@ -89,7 +172,7 @@ void IppHarrisCorner(int width, int height, double th)
 	int h = height;
 
 	mallocByte(w, h);
-	assignPtr(w, h);
+	assignPtr(w, h, img_index);
 	//-------------------------------------------------------------------------
 	// 1. (fx)*(fx), (fx)*(fy), (fy)*(fy) 계산
 	//-------------------------------------------------------------------------
@@ -107,9 +190,8 @@ void IppHarrisCorner(int width, int height, double th)
 	}
 
 	float tx, ty;
-	for (j = 0; j < h; j++)
-		for (i = 0; i < w; i++)
-		{
+	for (j = 0; j < h; j++) {
+		for (i = 0; i < w; i++) {
 			if (j == 0 || i == 0 || j == h - 1 || i == w - 1) {
 				dx2[j][i] = 0;
 				dy2[j][i] = 0;
@@ -125,8 +207,8 @@ void IppHarrisCorner(int width, int height, double th)
 			dx2[j][i] = tx * tx;
 			dy2[j][i] = ty * ty;
 			dxy[j][i] = tx * ty;
-
 		}
+	}
 
 	//-------------------------------------------------------------------------
 	// 2. 가우시안 필터링
@@ -147,30 +229,29 @@ void IppHarrisCorner(int width, int height, double th)
 	float g[5][5] = { { 1, 4, 6, 4, 1 },{ 4, 16, 24, 16, 4 },
 	{ 6, 24, 36, 24, 6 },{ 4, 16, 24, 16, 4 },{ 1, 4, 6, 4, 1 } };
 
-	for (y = 0; y < 5; y++)
-		for (x = 0; x < 5; x++)
-		{
+	for (y = 0; y < 5; y++) {
+		for (x = 0; x < 5; x++) {
 			g[y][x] /= 256.f;
 		}
+	}
 
 	float tx2, ty2, txy;
-	for (j = 2; j < h - 2; j++)
-		for (i = 2; i < w - 2; i++)
-		{
+	for (j = 2; j < h - 2; j++) {
+		for (i = 2; i < w - 2; i++) {
 			tx2 = ty2 = txy = 0;
-			for (y = 0; y < 5; y++)
-				for (x = 0; x < 5; x++)
-				{
+			for (y = 0; y < 5; y++) {
+				for (x = 0; x < 5; x++) {
 					tx2 += (dx2[j + y - 2][i + x - 2] * g[y][x]);
 					ty2 += (dy2[j + y - 2][i + x - 2] * g[y][x]);
 					txy += (dxy[j + y - 2][i + x - 2] * g[y][x]);
 
 				}
-
+			}
 			gdx2[j][i] = tx2;
 			gdy2[j][i] = ty2;
 			gdxy[j][i] = txy;
 		}
+	}
 
 	//-------------------------------------------------------------------------
 	// 3. 코너 응답 함수 생성
@@ -184,12 +265,12 @@ void IppHarrisCorner(int width, int height, double th)
 	}
 
 	float k = 0.04f;
-	for (j = 2; j < h - 2; j++)
-		for (i = 2; i < w - 2; i++)
-		{
+	for (j = 2; j < h - 2; j++) {
+		for (i = 2; i < w - 2; i++) {
 			crf[j][i] = (gdx2[j][i] * gdy2[j][i] - gdxy[j][i] * gdxy[j][i])
 				- k * (gdx2[j][i] + gdy2[j][i])*(gdx2[j][i] + gdy2[j][i]);
 		}
+	}		
 
 	//-------------------------------------------------------------------------
 	// 4. 임계값보다 큰 국지적 최댓값을 찾아 코너 포인트로 결정
@@ -199,36 +280,34 @@ void IppHarrisCorner(int width, int height, double th)
 
 	float cvf_value;
 
-	for (j = 2; j < h - 2; j++)
-		for (i = 2; i < w - 2; i++)
-		{
+	for (j = 2; j < h - 2; j++) {
+		for (i = 2; i < w - 2; i++) {
 			cvf_value = crf[j][i];
 			/*
 			if (cvf_value != 0) {
 				printf(" hit \n");
 			}
 			*/
-			if (cvf_value > th)
-			{
+			if (cvf_value > th) {
 				if (cvf_value > crf[j - 1][i] && cvf_value > crf[j - 1][i + 1] &&
 					cvf_value > crf[j][i + 1] && cvf_value > crf[j + 1][i + 1] &&
 					cvf_value > crf[j + 1][i] && cvf_value > crf[j + 1][i - 1] &&
-					cvf_value > crf[j][i - 1] && cvf_value > crf[j - 1][i - 1])
-				{
+					cvf_value > crf[j][i - 1] && cvf_value > crf[j - 1][i - 1]) {
 					location l;
 					l.x = i;
 					l.y = j;
+					group_index.push_back(corner.size());
 					corner.push_back(l);
 				}
 			}
 		}
+	}
 }
 
-
-void mallocMaps(int width, int height) { // malloc Maps array (size : width * height)
-	Maps = new PIXEL*[height];
+void mallocMaps(int width, int height, int img_index) { // malloc Maps array (size : width * height)
+	bgi[img_index].Maps = new PIXEL*[height];
 	for (int i = 0; i < height; i++) {
-		Maps[i] = new PIXEL[width];
+		bgi[img_index].Maps[i] = new PIXEL[width];
 	}
 }
 
@@ -239,29 +318,21 @@ void mallocByte(int width, int height) { // malloc Maps array (size : width * he
 	}
 }
 
-void assignPtr(int width, int height) {
+void assignPtr(int width, int height, int img_index) {
 	for (int i = 0; i < height; i++) {
 		for (int j = 0; j < width; j++) {
-			ptr[i][j] = Maps[i][j].gray;
+			ptr[i][j] = bgi[img_index].Maps[i][j].gray;
 		}
 	}
 }
 
-void mallocFloat(float **tmp, int width, int height) {
-	tmp = new float*[height];
-	for (int i = 0; i < height; i++) {
-		tmp[i] = new float[width];
-	}
-}
-
-
-void transImgToArray(IplImage* img) { // take image's info to Maps array
+void transImgToArray(IplImage* img, int img_index) { // take image's info to Maps array
 	for (int i = 0; i < img->height; i++) {
 		for (int j = 0; j < img->width; j++) {
-			Maps[i][j].red = img->imageData[i*img->widthStep + j * img->nChannels + 2];
-			Maps[i][j].green = img->imageData[i*img->widthStep + j * img->nChannels + 1];
-			Maps[i][j].blue = img->imageData[i*img->widthStep + j * img->nChannels + 0];
-			Maps[i][j].gray = (Maps[i][j].red + Maps[i][j].green + Maps[i][j].blue) / 3;
+			bgi[img_index].Maps[i][j].red = img->imageData[i*img->widthStep + j * img->nChannels + 2];
+			bgi[img_index].Maps[i][j].green = img->imageData[i*img->widthStep + j * img->nChannels + 1];
+			bgi[img_index].Maps[i][j].blue = img->imageData[i*img->widthStep + j * img->nChannels + 0];
+			bgi[img_index].Maps[i][j].gray = (bgi[img_index].Maps[i][j].red + bgi[img_index].Maps[i][j].green + bgi[img_index].Maps[i][j].blue) / 3;
 		}
 	}
 }
@@ -279,43 +350,171 @@ void setRedPoint(IplImage* img) {
 	}
 }
 
-
-void grayscaling(int width, int height) { // image processing (to grayscale)
-	for (int i = 0; i < height; i++) {
-		for (int j = 0; j < width; j++) {
-			Maps[i][j].red = Maps[i][j].gray;
-			Maps[i][j].green = Maps[i][j].gray;
-			Maps[i][j].blue = Maps[i][j].gray;
+void setRedBox(IplImage* img, int height, int width, int img_index) {
+	for (int i = 0; i < bgi[img_index].keypg.size(); i++) {
+		for (int YStep = 0; YStep < height; YStep++) {
+			for (int XStep = 0; XStep < width; XStep++) {
+				if ((XStep > bgi[img_index].keypg[i].end_point[3].x - 2 && XStep < bgi[img_index].keypg[i].end_point[3].x) || (XStep > bgi[img_index].keypg[i].end_point[1].x && XStep < bgi[img_index].keypg[i].end_point[1].x + 2)) {
+					if (YStep > bgi[img_index].keypg[i].end_point[0].y - 2 && YStep < bgi[img_index].keypg[i].end_point[2].y + 2) {
+						img->imageData[(YStep)* img->widthStep + (XStep)* img->nChannels + 2] = 255; // red
+						img->imageData[(YStep)* img->widthStep + (XStep)* img->nChannels + 1] = 0; // red
+						img->imageData[(YStep)* img->widthStep + (XStep)* img->nChannels + 0] = 0; // red
+					}
+				}
+				if ((YStep > bgi[img_index].keypg[i].end_point[0].y - 2 && YStep < bgi[img_index].keypg[i].end_point[0].y) || (YStep > bgi[img_index].keypg[i].end_point[2].y && YStep < bgi[img_index].keypg[i].end_point[2].y + 2)) {
+					if (XStep > bgi[img_index].keypg[i].end_point[3].x - 2 && XStep < bgi[img_index].keypg[i].end_point[1].x + 2) {
+						img->imageData[(YStep)* img->widthStep + (XStep)* img->nChannels + 2] = 255; // red
+						img->imageData[(YStep)* img->widthStep + (XStep)* img->nChannels + 1] = 0; // red
+						img->imageData[(YStep)* img->widthStep + (XStep)* img->nChannels + 0] = 0; // red
+					}
+				}
+			}
 		}
 	}
 }
-void binarization(int width, int height) { // image processing (to binary)
+
+void grayscaling(int width, int height, int img_index) { // image processing (to grayscale)
+	for (int i = 0; i < height; i++) {
+		for (int j = 0; j < width; j++) {
+			bgi[img_index].Maps[i][j].red = bgi[img_index].Maps[i][j].gray;
+			bgi[img_index].Maps[i][j].green = bgi[img_index].Maps[i][j].gray;
+			bgi[img_index].Maps[i][j].blue = bgi[img_index].Maps[i][j].gray;
+		}
+	}
+}
+
+void binarization(int width, int height, int img_index) { // image processing (to binary)
 	int threshold = 127;
 	for (int i = 0; i < height; i++) {
 		for (int j = 0; j < width; j++) {
-			if (Maps[i][j].gray > threshold) {
-				Maps[i][j].gray = 255;
-				Maps[i][j].red = 255;
-				Maps[i][j].green = 255;
-				Maps[i][j].blue = 255;
+			if (bgi[img_index].Maps[i][j].gray > threshold) {
+				bgi[img_index].Maps[i][j].gray = 255;
+				bgi[img_index].Maps[i][j].red = 255;
+				bgi[img_index].Maps[i][j].green = 255;
+				bgi[img_index].Maps[i][j].blue = 255;
 			}
 			else {
-				Maps[i][j].gray = 0;
-				Maps[i][j].red = 0;
-				Maps[i][j].green = 0;
-				Maps[i][j].blue = 0;
+				bgi[img_index].Maps[i][j].gray = 0;
+				bgi[img_index].Maps[i][j].red = 0;
+				bgi[img_index].Maps[i][j].green = 0;
+				bgi[img_index].Maps[i][j].blue = 0;
 			}
 		}
 	}
 }
 
-void findCigar(int width, int height)
-{
-	// TODO: Add a mosaic code here
-	// write your own code
-	// for applying your effect, you must use m_pImage
-	// this code is a simple example for manufacturing image : grayscaling
+int find(int a, vector<int> & v) {
+	if (v[a] == a) {
+		return a;
+	}
+	else {
+		v[a] = find(v[a], v);
+		return v[a];
+	}
+}
+
+void join(int a, int b, vector<int> & vt) {
+	int aroot = find(a, vt);
+	int broot = find(b, vt);
+	vt[aroot] = broot;
+}
+
+void grouping() {
+	for (int i = 1; i < corner.size(); i++) {
+		for (int j = 0; j < i; j++) {
+			decision(group_index, i, j);
+		}
+	}
+}
+
+void decision(vector<int> & vt, int n1, int n2) {
+
+	int tx = abs(corner[n1].x - corner[n2].x);
+	int ty = abs(corner[n1].y - corner[n2].y);
+
+	int distance = (tx * tx) + (ty * ty);
+
+	if (distance < 500) {
+		join(n1, n2, vt);
+	}
+}
+
+int abs(int a) {
+	if (a < 0)
+		return (-a);
+	else
+		return a;
+}
+
+void alloc_keyPoint(int img_index) {
+
+	int size = group_index.size();
+	int flag;
+
+	push_keyPoint(0, img_index);
+
+	for (int i = 1; i < size; i++) {
+		flag = 0;
+		for (int j = 0; j < bgi[img_index].keypg.size(); j++) {
+			if (bgi[img_index].keypg[j].group_num == group_index[i]) {
+				// 해당 keypg.size  ++
+				bgi[img_index].keypg[j].size++;
+				bgi[img_index].keypg[j].avg_location.x += corner[i].x;
+				bgi[img_index].keypg[j].avg_location.y += corner[i].y;
+
+				//비교 0 하 우 
+				if (corner[i].y < bgi[img_index].keypg[j].end_point[0].y) {
+					bgi[img_index].keypg[j].end_point[0].x = corner[i].x;
+					bgi[img_index].keypg[j].end_point[0].y = corner[i].y;
+				}
+				if (corner[i].x > bgi[img_index].keypg[j].end_point[1].x) {
+					bgi[img_index].keypg[j].end_point[1].x = corner[i].x;
+					bgi[img_index].keypg[j].end_point[1].y = corner[i].y;
+				}
+				if (corner[i].y > bgi[img_index].keypg[j].end_point[2].y) {
+					bgi[img_index].keypg[j].end_point[2].x = corner[i].x;
+					bgi[img_index].keypg[j].end_point[2].y = corner[i].y;
+				}
+				if (corner[i].x < bgi[img_index].keypg[j].end_point[3].x) {
+					bgi[img_index].keypg[j].end_point[3].x = corner[i].x;
+					bgi[img_index].keypg[j].end_point[3].y = corner[i].y;
+				}
+				flag = 1;
+				break;
+			}
+		}
+		if (flag == 0) {
+			push_keyPoint(i, img_index);
+		}
+	}
+	for (int i = 0; i < bgi[img_index].keypg.size(); i++) {
+		bgi[img_index].keypg[i].avg_location.x /= bgi[img_index].keypg[i].size;
+		bgi[img_index].keypg[i].avg_location.y /= bgi[img_index].keypg[i].size;
+	}
+}
+
+void push_keyPoint(int n, int img_index) {
+
+	keypoint_group tmp;
+	tmp.group_num = group_index[n];
+	tmp.size = 1;
+	tmp.avg_location.x = corner[n].x;
+	tmp.avg_location.y = corner[n].y;
+
+	tmp.end_point[0].x = corner[n].x;
+	tmp.end_point[1].x = corner[n].x;
+	tmp.end_point[2].x = corner[n].x;
+	tmp.end_point[3].x = corner[n].x;
+	tmp.end_point[0].y = corner[n].y;
+	tmp.end_point[1].y = corner[n].y;
+	tmp.end_point[2].y = corner[n].y;
+	tmp.end_point[3].y = corner[n].y;
 	
+	bgi[img_index].keypg.push_back(tmp);
+}
+
+void findCigar(int width, int height, int img_index) {
+
 	int XStep;
 	int YStep;
 	int x, y;
@@ -342,7 +541,7 @@ void findCigar(int width, int height)
 
 	for (YStep = 0; YStep < height; YStep++) {
 		for (XStep = 0; XStep < width; XStep++) {
-			color = Maps[XStep][YStep]; // get**********
+			color = bgi[img_index].Maps[XStep][YStep]; // get**********
 			color_diff[0] = color.blue - color.green;
 			if (color_diff[0] < 0) {
 				color_diff[0] *= -1;
@@ -401,14 +600,69 @@ void findCigar(int width, int height)
 	}
 }
 
-void subBackground(int width, int height)
-{
-	// TODO: Add a composite code here
+Mat check_nearby(int a, int b) {
+	int i, j;
+	for (i = 0; i < bgi[a].keypg.size(); i++) {
+		for (j = 0; j < bgi[b].keypg.size(); j++) {
+			if (bgi[a].keypg[i].size > 3 && abs(bgi[a].keypg[i].avg_location.y - bgi[b].keypg[j].avg_location.y) < 20) {
+				if (bgi[a].keypg[i].size > (bgi[b].keypg[j].size / 2) && bgi[a].keypg[i].size < (bgi[b].keypg[j].size * 2)) {
+					return composite_by_point(a, b, i, j);
+				}
+			}
+		}
+	}
+	return bgi[a].img;
+}
+
+Mat composite_by_point (int a, int b, int i, int j) {
+	
+	int widthdiff = bgi[a].keypg[i].avg_location.x - bgi[b].keypg[j].avg_location.x;
+	int max_width;
+	if (widthdiff > 0) {
+		max_width = std_width + widthdiff;
+	}
+	else {
+		max_width = std_width - widthdiff;
+	}
+	Mat img_Result(std_height, max_width, CV_8UC3);
+	if (widthdiff > 0) {
+		for (int y = 0; y < std_height; y++) {
+			for (int x = 0; x < std_width + widthdiff; x++) {
+				for (int i = 0; i < 3; i++) {
+					if (x < std_width) {
+						img_Result.at<Vec3b>(y, x)[i] = bgi[a].img.at<Vec3b>(y, x)[i];
+					}
+					else {
+						img_Result.at<Vec3b>(y, x)[i] = bgi[b].img.at<Vec3b>(y, x - widthdiff)[i];
+					}
+				}
+			}
+		}
+	}
+	else {
+		for (int y = 0; y < std_height; y++) {
+			for (int x = 0; x < std_width + widthdiff; x++) {
+				for (int i = 0; i < 3; i++) {
+					if (x < std_width) {
+						img_Result.at<Vec3b>(y, x)[i] = bgi[b].img.at<Vec3b>(y, x)[i];
+					}
+					else {
+						img_Result.at<Vec3b>(y, x)[i] = bgi[a].img.at<Vec3b>(y, x - widthdiff)[i];
+					}
+				}
+			}
+		}
+	}	
+
+	return img_Result;
+}
+
+void subBackground(int width, int height, int img_index) {
 
 	PIXEL firstColor;
 	PIXEL secondColor;
 	PIXEL newColor;
-	
+
 	float tempBlue, tempGreen, tempRed, tempGray;
 	int bx, by;
 	int tempSize;
@@ -424,7 +678,7 @@ void subBackground(int width, int height)
 		for (x = 0; x < width; x++) {
 
 			diff = 0;
-			firstColor = Maps[x][y]; // get**********
+			firstColor = bgi[img_index].Maps[x][y]; // get**********
 			tempBlue = firstColor.blue;
 			tempGreen = firstColor.green;
 			tempRed = firstColor.red;
