@@ -9,6 +9,7 @@
 #include <Windows.h>
 
 #define setting_num 10
+#define detect_num 4
 #define std_width 320
 #define std_height 240
 
@@ -34,7 +35,6 @@ typedef struct {
 	pt end_point[4]; // 0 상 1 우 2 하 3 좌
 } keypoint_group;
 
-// PIXEL **Maps;
 PIXEL **Bgs;
 PIXEL **NewImg;
 
@@ -42,16 +42,17 @@ uint8_t **ptr;
 
 vector<location> corner;
 vector<int> group_index;
-// vector<keypoint_group> keypg;
 
 typedef struct {
 	Mat img;
 	IplImage *trans;
 	PIXEL **Maps;
 	vector<keypoint_group> keypg;
-} background_info ;
+} background_info;
 
 vector<background_info> bgi;
+vector<background_info> sdi;
+
 Mat rotate_pi(Mat img, int width, int height);
 void IppHarrisCorner(int w, int h, double th, int img_index);
 void mallocMaps(int width, int height, int img_index);
@@ -73,42 +74,43 @@ void findCigar(int width, int height, int img_index);
 void subBackground(int width, int height, int img_index);
 Mat check_nearby(int a, int b);
 Mat composite_by_point(int a, int b, int i, int j);
+void test_avg_loc(int x, int y, int img_index);
 
-bool compare(const keypoint_group &a, const keypoint_group &b) {
+bool compare(const keypoint_group &a, const keypoint_group &b) { // to sort
 	return a.avg_location.x < b.avg_location.x;
 }
 
 int main() {
 
-	Mat img[setting_num];
-	IplImage *trans[setting_num];
+	Mat img[setting_num + detect_num];
+	IplImage *trans[setting_num + detect_num];
 	string inputString;
 	string outputString;
 
 	for (int i = 0; i < setting_num; i++) {
-		inputString = "C:\\"; // ★★★★★★ image directory setting ★★★★★★
+		inputString = "C:\\Users\\caucse\\Downloads\\bg\\"; // ★★★★ image directory setting ★★★★
 		inputString.append(to_string(i));
 		inputString.append(".jpg");
 		img[i] = imread(inputString, IMREAD_COLOR);
 		if (!img[i].data) {
-			cout << "Waiting....." << i << endl;
+			cout << "BG Image Waiting....." << i << endl;
 			i--;
 			Sleep(5000);
 			continue;
 		}
 	}
-	
+
 	for (int i = 0; i < setting_num; i++) {
 		trans[i] = &IplImage(img[i]);
-		outputString = "r_";
+		outputString = "bgr_";
 		outputString.append(to_string(i));
 		outputString.append(".jpg");
 		img[i] = rotate_pi(img[i], trans[i]->width, trans[i]->height);
 		imwrite(outputString, img[i]);
 	}
-	
-	background_info tbg;
-	bgi.assign(setting_num, tbg);
+
+	background_info tbg; // initialize bgi
+	bgi.assign(setting_num + detect_num, tbg);
 	for (int i = 0; i < setting_num; i++) {
 		bgi[i].img = img[i];
 	}
@@ -123,32 +125,108 @@ int main() {
 
 		mallocMaps(width, height, i);
 		transImgToArray(bgi[i].trans, i);
-		
+
 		grayscaling(width, height, i);
-		//binarization(width, height);
+		//binarization(width, height, i);
 
 		IppHarrisCorner(width, height, threshold, i);
-		setRedPoint(bgi[i].trans);
-		//cvResizeWindow("test.jpg", 320, 240);
+		if (i == 2) {
+			setRedPoint(bgi[i].trans);
+		}
+		// setRedPoint(bgi[i].trans); //
 		grouping();
 		alloc_keyPoint(i);
 
-		setRedBox(bgi[i].trans, height, width, i);
+		if (i == 2) {
+			setRedBox(bgi[i].trans, height, width, i);
+		}
+		// setRedBox(bgi[i].trans, height, width, i); //
 		group_index.clear();
-		// keypg.clear();
+
 		outputString = to_string(i);
-		outputString.append(".jpg");
+		outputString.append("_bg");
+		/*
+		for (int k = 0; k < bgi[i].keypg.size(); k++) {
+			test_avg_loc(bgi[i].keypg[k].avg_location.x, bgi[i].keypg[k].avg_location.y, i);
+		}
+		*/
 		cvShowImage(outputString.c_str(), bgi[i].trans);
-		
 	}
 
-	Mat temp;
-	temp = check_nearby(0, 1);
-	imshow("test_comp", temp);
-	waitKey(0);
 	end = clock();
-	cout << ((end - begin)) << "ms" << endl;
+
+	for (int i = 0; i < detect_num; i++) {
+		inputString = "C:\\Users\\caucse\\Downloads\\sd\\"; // ★★★★ image directory setting ★★★★
+		inputString.append(to_string(i));
+		inputString.append(".jpg");
+		img[setting_num + i] = imread(inputString, IMREAD_COLOR);
+		if (!img[setting_num + i].data) {
+			cout << "SD Image Waiting....." << i << endl;
+			i--;
+			Sleep(5000);
+			continue;
+		}
+	}
+
+	for (int i = setting_num; i < setting_num + detect_num; i++) {
+		trans[i] = &IplImage(img[i]);
+		outputString = "sdr_";
+		outputString.append(to_string(i - setting_num));
+		outputString.append(".jpg");
+		img[i] = rotate_pi(img[i], trans[i]->width, trans[i]->height);
+		imwrite(outputString, img[i]);
+	}
+
+	// sdi.assign(detect_num, tbg);
+	for (int i = setting_num; i < setting_num + detect_num; i++) {
+		bgi[i].img = img[i];
+	}
+
+	for (int i = setting_num; i < setting_num + detect_num; i++) {
+
+		bgi[i].trans = &IplImage(bgi[i].img);
+		int width = bgi[i].trans->width;
+		int height = bgi[i].trans->height;
+		int threshold = 100;
+
+		mallocMaps(width, height, i);
+		transImgToArray(bgi[i].trans, i);
+
+		grayscaling(width, height, i);
+		//binarization(width, height, i);
+
+		IppHarrisCorner(width, height, threshold, i);
+		setRedPoint(bgi[i].trans); //
+		grouping();
+		alloc_keyPoint(i);
+
+		setRedBox(bgi[i].trans, height, width, i); //
+		group_index.clear();
+
+		outputString = to_string(i - setting_num);
+		outputString.append("_sd");
+		/*
+		for (int k = 0; k < bgi[i].keypg.size(); k++) {
+			test_avg_loc(bgi[i].keypg[k].avg_location.x, bgi[i].keypg[k].avg_location.y, i);
+		}
+		*/
+		cvShowImage(outputString.c_str(), bgi[i].trans);
+	}
+
+	Mat temp[9];
+	temp[0] = check_nearby(2, setting_num + 2);
+	imshow("test_comp", temp[0]);
+	waitKey(0);
+	/*
+	for (int i = 0; i < 9; i++) { // composite test
+		temp[i] = check_nearby(i, i + 1);
+		imshow("test_comp", temp[i]);
+		waitKey(0);
+	}
+	*/
 	
+	cout << ((end - begin)) << "ms" << endl;
+
 	return 0;
 }
 
@@ -158,14 +236,13 @@ Mat rotate_pi(Mat img, int width, int height) { // rotate 180 degree
 		for (int j = 0; j < width; j++) {
 			for (int k = 0; k < 3; k++) {
 				ret.at<Vec3b>(i, j)[k] = img.at<Vec3b>(height - i - 1, width - j - 1)[k];
-			}			
+			}
 		}
 	}
 	return ret;
 }
 
-void IppHarrisCorner(int width, int height, double th, int img_index)
-{
+void IppHarrisCorner(int width, int height, double th, int img_index) {
 	register int i, j, x, y;
 
 	int w = width;
@@ -173,10 +250,9 @@ void IppHarrisCorner(int width, int height, double th, int img_index)
 
 	mallocByte(w, h);
 	assignPtr(w, h, img_index);
-	//-------------------------------------------------------------------------
-	// 1. (fx)*(fx), (fx)*(fy), (fy)*(fy) 계산
-	//-------------------------------------------------------------------------
-
+	
+	// 1. (fx)*(fx), (fx)*(fy), (fy)*(fy)
+	
 	float **dx2, **dy2, **dxy;
 
 	dx2 = new float*[height];
@@ -210,11 +286,8 @@ void IppHarrisCorner(int width, int height, double th, int img_index)
 		}
 	}
 
-	//-------------------------------------------------------------------------
-	// 2. 가우시안 필터링
-	//-------------------------------------------------------------------------
-
-
+	// 2. filtering
+	
 	float **gdx2, **gdy2, **gdxy;
 	gdx2 = new float*[height];
 	gdy2 = new float*[height];
@@ -244,7 +317,6 @@ void IppHarrisCorner(int width, int height, double th, int img_index)
 					tx2 += (dx2[j + y - 2][i + x - 2] * g[y][x]);
 					ty2 += (dy2[j + y - 2][i + x - 2] * g[y][x]);
 					txy += (dxy[j + y - 2][i + x - 2] * g[y][x]);
-
 				}
 			}
 			gdx2[j][i] = tx2;
@@ -253,9 +325,7 @@ void IppHarrisCorner(int width, int height, double th, int img_index)
 		}
 	}
 
-	//-------------------------------------------------------------------------
-	// 3. 코너 응답 함수 생성
-	//-------------------------------------------------------------------------
+	// 3. check corner
 
 	float **crf;
 	crf = new float*[height];
@@ -270,11 +340,9 @@ void IppHarrisCorner(int width, int height, double th, int img_index)
 			crf[j][i] = (gdx2[j][i] * gdy2[j][i] - gdxy[j][i] * gdxy[j][i])
 				- k * (gdx2[j][i] + gdy2[j][i])*(gdx2[j][i] + gdy2[j][i]);
 		}
-	}		
+	}
 
-	//-------------------------------------------------------------------------
-	// 4. 임계값보다 큰 국지적 최댓값을 찾아 코너 포인트로 결정
-	//-------------------------------------------------------------------------
+	// 4. decision by th
 
 	corner.clear();
 
@@ -434,7 +502,7 @@ void decision(vector<int> & vt, int n1, int n2) {
 
 	int distance = (tx * tx) + (ty * ty);
 
-	if (distance < 500) {
+	if (distance < 400) {
 		join(n1, n2, vt);
 	}
 }
@@ -509,8 +577,89 @@ void push_keyPoint(int n, int img_index) {
 	tmp.end_point[1].y = corner[n].y;
 	tmp.end_point[2].y = corner[n].y;
 	tmp.end_point[3].y = corner[n].y;
-	
+
 	bgi[img_index].keypg.push_back(tmp);
+}
+
+Mat check_nearby(int a, int b) {
+	int i, j;
+	for (i = 0; i < bgi[a].keypg.size(); i++) {
+		for (j = 0; j < bgi[b].keypg.size(); j++) {
+			if (bgi[a].keypg[i].size > 3 && abs(bgi[a].keypg[i].avg_location.y - bgi[b].keypg[j].avg_location.y) < 5) {
+				if (bgi[a].keypg[i].size > (bgi[b].keypg[j].size / 2) && bgi[a].keypg[i].size < (bgi[b].keypg[j].size * 2)) {
+					return composite_by_point(a, b, i, j);
+				}
+			}
+		}
+	}
+	if (a + 1 == setting_num) {
+		return bgi[b].img;
+	}
+	return check_nearby(a + 1, b);
+}
+
+Mat composite_by_point(int a, int b, int i, int j) {
+
+	int widthdiff = bgi[a].keypg[i].avg_location.x - bgi[b].keypg[j].avg_location.x;
+	int max_width;
+	int tempToSwap;
+	int newSize;
+	if (widthdiff < 0) {
+		widthdiff *= -1;
+		tempToSwap = a;
+		a = b;
+		b = tempToSwap;
+		tempToSwap = i;
+		i = j;
+		j = tempToSwap;
+	}
+	max_width = std_width + widthdiff;
+	Mat img_Result(std_height, max_width, CV_8UC3);
+	if (a > b) {
+		newSize = std_width;
+	}
+	else {
+		newSize = widthdiff;
+	}
+
+	for (int y = 0; y < std_height; y++) {
+		for (int x = 0; x < std_width + widthdiff; x++) {
+			for (int k = 0; k < 3; k++) {
+				if (x < newSize) {
+					img_Result.at<Vec3b>(y, x)[k] = bgi[a].img.at<Vec3b>(y, x)[k];
+				}
+				else {
+					img_Result.at<Vec3b>(y, x)[k] = bgi[b].img.at<Vec3b>(y, x - widthdiff)[k];
+				}
+			}
+		}
+	}
+		
+	
+	for (int y = -2; y < 2; y++) { // key group test
+		for (int x = -2; x < 2; x++) {
+			img_Result.at<Vec3b>(bgi[a].keypg[i].avg_location.y + y, bgi[a].keypg[i].avg_location.x + x)[0] = 0;
+			img_Result.at<Vec3b>(bgi[a].keypg[i].avg_location.y + y, bgi[a].keypg[i].avg_location.x + x)[1] = 255;
+			img_Result.at<Vec3b>(bgi[a].keypg[i].avg_location.y + y, bgi[a].keypg[i].avg_location.x + x)[2] = 255;
+		}
+	}
+	
+
+	return img_Result;
+}
+
+void test_avg_loc(int x, int y, int img_index) {
+	int index;
+	for (int i = -4; i < 4; i++) {
+		for (int j = -4; j < 4; j++) {
+			if (x + i >= 0 && x + i < std_width && y + j >= 0 && y + j < std_height) {
+				index = 3 * ((x + i) + (y + j) * std_width);
+				bgi[img_index].trans->imageData[index] = 0;
+				bgi[img_index].trans->imageData[index + 1] = 255;
+				bgi[img_index].trans->imageData[index + 2] = 255;
+			}
+		}
+	}
 }
 
 void findCigar(int width, int height, int img_index) {
@@ -578,6 +727,8 @@ void findCigar(int width, int height, int img_index) {
 	}
 	CIx /= CIp;
 	CIy /= CIp;
+
+	// draw redbox
 	for (YStep = 0; YStep < height; YStep++) {
 		for (XStep = 0; XStep < width; XStep++) {
 			if ((XStep > CIx - 55 && XStep < CIx - 50) || (XStep > CIx + 50 && XStep < CIx + 55)) {
@@ -598,63 +749,6 @@ void findCigar(int width, int height, int img_index) {
 			}
 		}
 	}
-}
-
-Mat check_nearby(int a, int b) {
-	int i, j;
-	for (i = 0; i < bgi[a].keypg.size(); i++) {
-		for (j = 0; j < bgi[b].keypg.size(); j++) {
-			if (bgi[a].keypg[i].size > 3 && abs(bgi[a].keypg[i].avg_location.y - bgi[b].keypg[j].avg_location.y) < 20) {
-				if (bgi[a].keypg[i].size > (bgi[b].keypg[j].size / 2) && bgi[a].keypg[i].size < (bgi[b].keypg[j].size * 2)) {
-					return composite_by_point(a, b, i, j);
-				}
-			}
-		}
-	}
-	return bgi[a].img;
-}
-
-Mat composite_by_point (int a, int b, int i, int j) {
-	
-	int widthdiff = bgi[a].keypg[i].avg_location.x - bgi[b].keypg[j].avg_location.x;
-	int max_width;
-	if (widthdiff > 0) {
-		max_width = std_width + widthdiff;
-	}
-	else {
-		max_width = std_width - widthdiff;
-	}
-	Mat img_Result(std_height, max_width, CV_8UC3);
-	if (widthdiff > 0) {
-		for (int y = 0; y < std_height; y++) {
-			for (int x = 0; x < std_width + widthdiff; x++) {
-				for (int i = 0; i < 3; i++) {
-					if (x < std_width) {
-						img_Result.at<Vec3b>(y, x)[i] = bgi[a].img.at<Vec3b>(y, x)[i];
-					}
-					else {
-						img_Result.at<Vec3b>(y, x)[i] = bgi[b].img.at<Vec3b>(y, x - widthdiff)[i];
-					}
-				}
-			}
-		}
-	}
-	else {
-		for (int y = 0; y < std_height; y++) {
-			for (int x = 0; x < std_width + widthdiff; x++) {
-				for (int i = 0; i < 3; i++) {
-					if (x < std_width) {
-						img_Result.at<Vec3b>(y, x)[i] = bgi[b].img.at<Vec3b>(y, x)[i];
-					}
-					else {
-						img_Result.at<Vec3b>(y, x)[i] = bgi[a].img.at<Vec3b>(y, x - widthdiff)[i];
-					}
-				}
-			}
-		}
-	}	
-
-	return img_Result;
 }
 
 void subBackground(int width, int height, int img_index) {
