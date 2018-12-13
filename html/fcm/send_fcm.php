@@ -1,5 +1,5 @@
 <?php
-define("GOOGLE_SERVER_KEY", "AIzaSyC065da-OKAbTQTCRx0XRwHyGIKWQCYFb8");
+define("GOOGLE_SERVER_KEY", "HIDE");
 function send_fcm($message, $id) {
 $url = 'https://fcm.googleapis.com/fcm/send';
 
