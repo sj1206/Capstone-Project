@@ -1,17 +1,16 @@
-package caucse.myapplication;
+package com.example.caucse.db0602;
 
 import android.content.Context;
-import android.content.Intent;
-import android.graphics.drawable.Drawable;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.BaseAdapter;
-import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.TextView;
 
 import java.util.ArrayList;
+
+
 
 public class ListViewAdapter extends BaseAdapter {
 
@@ -20,7 +19,7 @@ public class ListViewAdapter extends BaseAdapter {
     TextView descTextView;
 
     Context context;
-    ArrayList<ListViewItem> listViewItemList = new ArrayList<ListViewItem>() ;
+    ArrayList<ListViewItem> listViewItemList;
 
     public ListViewAdapter(Context context, ArrayList<ListViewItem> listViewItemList) {
         this.context = context;
@@ -49,18 +48,18 @@ public class ListViewAdapter extends BaseAdapter {
 
             LayoutInflater inflater = (LayoutInflater) context.getSystemService(Context.LAYOUT_INFLATER_SERVICE);
             convertView = inflater.inflate(R.layout.listview_item, parent, false);
-
-            iconImageView = (ImageView) convertView.findViewById(R.id.imageView1);
-            titleTextView = (TextView) convertView.findViewById(R.id.textView1);
-            descTextView = (TextView) convertView.findViewById(R.id.textView2);
+        }
+            iconImageView = convertView.findViewById(R.id.imageView1);
+            titleTextView = convertView.findViewById(R.id.textView1);
+            descTextView = convertView.findViewById(R.id.textView2);
 
             ListViewItem listViewItem = listViewItemList.get(position);
 
-            iconImageView.setImageDrawable(listViewItem.getIcon());
+            iconImageView.setImageBitmap(listViewItem.getIcon());
             titleTextView.setText(listViewItem.getTitle());
             descTextView.setText(listViewItem.getDesc());
 
-        }
+
 
         return convertView;
     }

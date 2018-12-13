@@ -1,24 +1,27 @@
-package caucse.myapplication;
+package com.example.caucse.db0602;
 
-import android.graphics.drawable.Drawable;
+import android.graphics.Bitmap;
 
 /**
  * Created by caucse on 2018-04-10.
  */
 
 public class ListViewItem {
-    private Drawable iconDrawable ;
+    private Bitmap iconBitmap ;
     private String titleStr ;
     private String descStr ;
 
-    public ListViewItem(Drawable iconDrawable, String titleStr, String descStr) {
-        this.iconDrawable = iconDrawable;
+    public ListViewItem (Bitmap iconBitmap, String titleStr, String descStr) {
+        this.iconBitmap = iconBitmap;
         this.titleStr = titleStr;
         this.descStr = descStr;
     }
 
-    public void setIcon(Drawable icon) {
-        iconDrawable = icon ;
+    public ListViewItem() {
+    }
+
+    public void setIcon(Bitmap icon) {
+        iconBitmap = icon ;
     }
 
     public void setTitle(String title) {
@@ -29,8 +32,8 @@ public class ListViewItem {
         descStr = desc ;
     }
 
-    public Drawable getIcon() {
-        return this.iconDrawable ;
+    public Bitmap getIcon() {
+        return this.iconBitmap ;
     }
     public String getTitle() {
         return this.titleStr ;
@@ -39,3 +42,4 @@ public class ListViewItem {
         return this.descStr ;
     }
 }
+
